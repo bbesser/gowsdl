@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -28,13 +29,16 @@ const maxRecursion uint8 = 20
 
 // GoWSDL defines the struct for WSDL generator.
 type GoWSDL struct {
-	loc                   *Location
-	pkg                   string
-	ignoreTLS             bool
-	makePublicFn          func(string) string
-	wsdl                  *WSDL
-	resolvedXSDExternals  map[string]bool
-	currentRecursionLevel uint8
+	loc                    *Location
+	pkg                    string
+	ignoreTLS              bool
+	makePublicFn           func(string) string
+	wsdl                   *WSDL
+	resolvedXSDExternals   map[string]bool
+	currentRecursionLevel  uint8
+	seenTargetNamespace    map[string]string
+	currentTargetNamespace string
+	currentXsdSchemas      []*XSDSchema
 }
 
 var cacheDir = filepath.Join(os.TempDir(), "gowsdl-cache")
@@ -198,7 +202,7 @@ func (g *GoWSDL) resolveXSDExternals(schema *XSDSchema, loc *Location) error {
 			return err
 		}
 		schemaKey := location.String()
-		if g.resolvedXSDExternals[location.String()] {
+		if g.resolvedXSDExternals[schemaKey] {
 			return nil
 		}
 		if g.resolvedXSDExternals == nil {
@@ -216,6 +220,15 @@ func (g *GoWSDL) resolveXSDExternals(schema *XSDSchema, loc *Location) error {
 		err = xml.Unmarshal(data, newschema)
 		if err != nil {
 			return err
+		}
+
+		if g.seenTargetNamespace == nil {
+			g.seenTargetNamespace = make(map[string]string)
+		}
+		namespacePrefix, ok := g.seenTargetNamespace[newschema.TargetNamespace]
+		if !ok {
+			namespacePrefix = "Ns" + strconv.Itoa(len(g.seenTargetNamespace)+1)
+			g.seenTargetNamespace[newschema.TargetNamespace] = namespacePrefix
 		}
 
 		if (len(newschema.Includes) > 0 || len(newschema.Imports) > 0) &&
@@ -254,18 +267,36 @@ func (g *GoWSDL) resolveXSDExternals(schema *XSDSchema, loc *Location) error {
 	return nil
 }
 
+func (g *GoWSDL) setCurrentTargetNamespace(currentTns string) string {
+	g.currentTargetNamespace = currentTns
+	g.currentXsdSchemas = make([]*XSDSchema, 0)
+	for _, schema := range g.wsdl.Types.Schemas {
+		if schema.TargetNamespace == currentTns {
+			g.currentXsdSchemas = append(g.currentXsdSchemas, schema)
+		}
+	}
+
+	return "ignored"
+}
+
+func (g *GoWSDL) addNamespacePrefix(typeName string) string {
+	return g.seenTargetNamespace[g.currentTargetNamespace] + typeName
+}
+
 func (g *GoWSDL) genTypes() ([]byte, error) {
 	funcMap := template.FuncMap{
-		"toGoType":              toGoType,
-		"stripns":               stripns,
-		"replaceReservedWords":  replaceReservedWords,
-		"makePublic":            g.makePublicFn,
-		"makeFieldPublic":       makePublic,
-		"comment":               comment,
-		"removeNS":              removeNS,
-		"goString":              goString,
-		"findNameByType":        g.findNameByType,
-		"removePointerFromType": removePointerFromType,
+		"toGoType":                  g.toGoType,
+		"stripns":                   stripns,
+		"replaceReservedWords":      replaceReservedWords,
+		"makePublic":                g.makePublicFn,
+		"makeFieldPublic":           makePublic,
+		"comment":                   comment,
+		"removeNS":                  removeNS,
+		"goString":                  goString,
+		"findNameByType":            g.findNameByType,
+		"removePointerFromType":     removePointerFromType,
+		"setCurrentTargetNamespace": g.setCurrentTargetNamespace,
+		"addNamespacePrefix":        g.addNamespacePrefix,
 	}
 
 	data := new(bytes.Buffer)
@@ -280,7 +311,7 @@ func (g *GoWSDL) genTypes() ([]byte, error) {
 
 func (g *GoWSDL) genOperations() ([]byte, error) {
 	funcMap := template.FuncMap{
-		"toGoType":             toGoType,
+		"toGoType":             g.toGoType,
 		"stripns":              stripns,
 		"replaceReservedWords": replaceReservedWords,
 		"makePublic":           g.makePublicFn,
@@ -288,6 +319,7 @@ func (g *GoWSDL) genOperations() ([]byte, error) {
 		"findType":             g.findType,
 		"findSOAPAction":       g.findSOAPAction,
 		"findServiceAddress":   g.findServiceAddress,
+		"addNamespacePrefix":        g.addNamespacePrefix,
 	}
 
 	data := new(bytes.Buffer)
@@ -302,7 +334,7 @@ func (g *GoWSDL) genOperations() ([]byte, error) {
 
 func (g *GoWSDL) genHeader() ([]byte, error) {
 	funcMap := template.FuncMap{
-		"toGoType":             toGoType,
+		"toGoType":             g.toGoType,
 		"stripns":              stripns,
 		"replaceReservedWords": replaceReservedWords,
 		"makePublic":           g.makePublicFn,
@@ -374,27 +406,34 @@ func goString(s string) string {
 }
 
 var xsd2GoTypes = map[string]string{
-	"string":        "string",
-	"token":         "string",
-	"float":         "float32",
-	"double":        "float64",
-	"decimal":       "float64",
-	"integer":       "int32",
-	"int":           "int32",
-	"short":         "int16",
-	"byte":          "int8",
-	"long":          "int64",
-	"boolean":       "bool",
-	"datetime":      "time.Time",
-	"date":          "time.Time",
-	"time":          "time.Time",
-	"base64binary":  "[]byte",
-	"hexbinary":     "[]byte",
-	"unsignedint":   "uint32",
-	"unsignedshort": "uint16",
-	"unsignedbyte":  "byte",
-	"unsignedlong":  "uint64",
-	"anytype":       "interface{}",
+	"string":             "string",
+	"token":              "string",
+	"nmtoken":            "string",
+	"id":                 "string",
+	"duration":           "string",
+	"anyuri":             "string",
+	"normalizedstring":   "string",
+	"float":              "float32",
+	"double":             "float64",
+	"decimal":            "float64",
+	"integer":            "int32",
+	"int":                "int32",
+	"nonnegativeinteger": "int64",
+	"positiveinteger":    "int64",
+	"short":              "int16",
+	"byte":               "int8",
+	"long":               "int64",
+	"boolean":            "bool",
+	"datetime":           "time.Time",
+	"date":               "time.Time",
+	"time":               "time.Time",
+	"base64binary":       "[]byte",
+	"hexbinary":          "[]byte",
+	"unsignedint":        "uint32",
+	"unsignedshort":      "uint16",
+	"unsignedbyte":       "byte",
+	"unsignedlong":       "uint64",
+	"anytype":            "interface{}",
 }
 
 func removeNS(xsdType string) string {
@@ -408,23 +447,33 @@ func removeNS(xsdType string) string {
 	return r[0]
 }
 
-func toGoType(xsdType string) string {
+func (g *GoWSDL) toGoType(xsdType string) string {
 	// Handles name space, ie. xsd:string, xs:string
 	r := strings.Split(xsdType, ":")
 
-	t := r[0]
+	theType := r[0]
+	fullNamespace := g.currentXsdSchemas[0].TargetNamespace
 
 	if len(r) == 2 {
-		t = r[1]
+		theType = r[1]
+Loop:
+		for _, schema := range g.currentXsdSchemas {
+			for k, v := range schema.Xmlns {
+				if k == r[0] {
+					fullNamespace = v
+					break Loop
+				}
+			}
+		}
 	}
 
-	value := xsd2GoTypes[strings.ToLower(t)]
+	value := xsd2GoTypes[strings.ToLower(theType)]
 
 	if value != "" {
 		return value
 	}
 
-	return "*" + replaceReservedWords(makePublic(t))
+	return "*" + g.seenTargetNamespace[fullNamespace] + replaceReservedWords(makePublic(theType))
 }
 
 func removePointerFromType(goType string) string {

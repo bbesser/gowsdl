@@ -6,7 +6,7 @@ package gowsdl
 
 var typesTmpl = `
 {{define "SimpleType"}}
-	{{$type := replaceReservedWords .Name | makePublic}}
+	{{$type := replaceReservedWords .Name | makePublic | addNamespacePrefix}}
 	{{if .Doc}} {{.Doc | comment}} {{end}}
 	{{if ne .List.ItemType ""}}
 		type {{$type}} []{{toGoType .List.ItemType }}
@@ -23,7 +23,7 @@ var typesTmpl = `
 		{{with .Restriction}}
 			{{range .Enumeration}}
 				{{if .Doc}} {{.Doc | comment}} {{end}}
-				{{$type}}{{$value := replaceReservedWords .Value}}{{$value | makePublic}} {{$type}} = "{{goString .Value}}" {{end}}
+				{{$type}}{{$value := replaceReservedWords .Value}}{{$value | makePublic | addNamespacePrefix}} {{$type}} = "{{goString .Value}}" {{end}}
 		{{end}}
 	)
 	{{end}}
@@ -55,7 +55,7 @@ var typesTmpl = `
 {{end}}
 
 {{define "ComplexTypeInline"}}
-	{{replaceReservedWords .Name | makePublic}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}struct {
+	{{replaceReservedWords .Name | makePublic | addNamespacePrefix}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}struct {
 	{{with .ComplexType}}
 		{{if ne .ComplexContent.Extension.Base ""}}
 			{{template "ComplexContent" .ComplexContent}}
@@ -75,7 +75,7 @@ var typesTmpl = `
 {{define "Elements"}}
 	{{range .}}
 		{{if ne .Ref ""}}
-			{{removeNS .Ref | replaceReservedWords  | makePublic}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Ref | toGoType}} ` + "`" + `xml:"{{.Ref | removeNS}},omitempty"` + "`" + `
+			{{removeNS .Ref | replaceReservedWords  | makePublic | addNamespacePrefix}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Ref | toGoType}} ` + "`" + `xml:"{{.Ref | removeNS}},omitempty"` + "`" + `
 		{{else}}
 		{{if not .Type}}
 			{{if .SimpleType}}
@@ -90,13 +90,14 @@ var typesTmpl = `
 			{{end}}
 		{{else}}
 			{{if .Doc}}{{.Doc | comment}} {{end}}
-			{{replaceReservedWords .Name | makeFieldPublic}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Type | toGoType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` {{end}}
+			{{replaceReservedWords .Name | makeFieldPublic | addNamespacePrefix}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Type | toGoType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` {{end}}
 		{{end}}
 	{{end}}
 {{end}}
 
 {{range .Schemas}}
 	{{ $targetNamespace := .TargetNamespace }}
+	{{ $ignored := setCurrentTargetNamespace $targetNamespace }}
 
 	{{range .SimpleType}}
 		{{template "SimpleType" .}}
@@ -107,7 +108,7 @@ var typesTmpl = `
 		{{if not .Type}}
 			{{/* ComplexTypeLocal */}}
 			{{with .ComplexType}}
-				type {{$name | replaceReservedWords | makePublic}} struct {
+				type {{$name | replaceReservedWords | makePublic | addNamespacePrefix}} struct {
 					XMLName xml.Name ` + "`xml:\"{{$targetNamespace}} {{$name}}\"`" + `
 					{{if ne .ComplexContent.Extension.Base ""}}
 						{{template "ComplexContent" .ComplexContent}}
@@ -123,13 +124,17 @@ var typesTmpl = `
 				}
 			{{end}}
 		{{else}}
-			type {{$name | replaceReservedWords | makePublic}} {{toGoType .Type | removePointerFromType}}
+			{{ $nsName := $name | replaceReservedWords | makePublic | addNamespacePrefix }}
+			{{ $nsType := toGoType .Type | removePointerFromType }}
+			{{ if ne $nsName $nsType }} 
+				type {{$nsName}} {{$nsType}} // {{ $name }} - {{ .Type}}
+			{{end}}
 		{{end}}
 	{{end}}
 
 	{{range .ComplexTypes}}
 		{{/* ComplexTypeGlobal */}}
-		{{$name := replaceReservedWords .Name | makePublic}}
+		{{$name := replaceReservedWords .Name | makePublic | addNamespacePrefix}}
 		type {{$name}} struct {
 			{{$typ := findNameByType .Name}}
 			{{if ne $name $typ}}
