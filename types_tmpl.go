@@ -124,11 +124,9 @@ var typesTmpl = `
 				}
 			{{end}}
 		{{else}}
-			{{ $nsName := $name | replaceReservedWords | makePublic | addNamespacePrefix }}
+			{{ $nsName := $name | replaceReservedWords | makePublic }}
 			{{ $nsType := toGoType .Type | removePointerFromType }}
-			{{ if ne $nsName $nsType }} 
-				type {{$nsName}} {{$nsType}} // {{ $name }} - {{ .Type}}
-			{{end}}
+			type {{$nsName}} {{$nsType}}
 		{{end}}
 	{{end}}
 

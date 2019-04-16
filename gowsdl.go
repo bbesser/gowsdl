@@ -319,7 +319,6 @@ func (g *GoWSDL) genOperations() ([]byte, error) {
 		"findType":             g.findType,
 		"findSOAPAction":       g.findSOAPAction,
 		"findServiceAddress":   g.findServiceAddress,
-		"addNamespacePrefix":        g.addNamespacePrefix,
 	}
 
 	data := new(bytes.Buffer)
