@@ -69,7 +69,7 @@ var typesTmpl = `
 			{{template "Attributes" .Attributes}}
 		{{end}}
 	{{end}}
-	} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + `
+	} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` // foo3
 {{end}}
 
 {{define "Elements"}}
@@ -81,16 +81,16 @@ var typesTmpl = `
 			{{if .SimpleType}}
 				{{if .Doc}} {{.Doc | comment}} {{end}}
 				{{if ne .SimpleType.List.ItemType ""}}
-					{{ .Name | makeFieldPublic}} []{{toGoType .SimpleType.List.ItemType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + `
+					{{ .Name | makeFieldPublic}} []{{toGoType .SimpleType.List.ItemType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` // foo2
 				{{else}}
-					{{ .Name | makeFieldPublic}} {{toGoType .SimpleType.Restriction.Base}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + `
+					{{ .Name | makeFieldPublic}} {{toGoType .SimpleType.Restriction.Base}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` // foo1
 				{{end}}
 			{{else}}
 				{{template "ComplexTypeInline" .}}
 			{{end}}
 		{{else}}
 			{{if .Doc}}{{.Doc | comment}} {{end}}
-			{{replaceReservedWords .Name | makeFieldPublic | addNamespacePrefix}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Type | toGoType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` {{end}}
+			{{replaceReservedWords .Name | makeFieldPublic | addNamespacePrefix}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Type | toGoType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` // foo5 {{end}}
 		{{end}}
 	{{end}}
 {{end}}
@@ -109,7 +109,7 @@ var typesTmpl = `
 			{{/* ComplexTypeLocal */}}
 			{{with .ComplexType}}
 				type {{$name | replaceReservedWords | makePublic | addNamespacePrefix}} struct {
-					XMLName xml.Name ` + "`xml:\"{{$targetNamespace}} {{$name}}\"`" + `
+					XMLName xml.Name ` + "`xml:\"{{$targetNamespace}} {{$name}}\"`" + ` // bar1
 					{{if ne .ComplexContent.Extension.Base ""}}
 						{{template "ComplexContent" .ComplexContent}}
 					{{else if ne .SimpleContent.Extension.Base ""}}
@@ -126,7 +126,9 @@ var typesTmpl = `
 		{{else}}
 			{{ $nsName := $name | replaceReservedWords | makePublic }}
 			{{ $nsType := toGoType .Type | removePointerFromType }}
-			type {{$nsName}} {{$nsType}}
+			type {{$nsName}} struct {
+				{{$nsType}} ` + "`xml:\"{{$nsType}}\"`" + `
+			}
 		{{end}}
 	{{end}}
 
@@ -135,8 +137,9 @@ var typesTmpl = `
 		{{$name := replaceReservedWords .Name | makePublic | addNamespacePrefix}}
 		type {{$name}} struct {
 			{{$typ := findNameByType .Name}}
-			{{if ne $name $typ}}
-				XMLName xml.Name ` + "`xml:\"{{$targetNamespace}} {{$typ}}\"`" + `
+			{{$typWithNamespace := findNameByType .Name | addNamespacePrefix}}
+			{{if ne $name $typWithNamespace}}
+				// XMLName xml.Name ` + "`xml:\"{{$targetNamespace}} {{$typ}}\"`" + ` // bar2 {{ $typWithNamespace }}
 			{{end}}
 			{{if ne .ComplexContent.Extension.Base ""}}
 				{{template "ComplexContent" .ComplexContent}}
