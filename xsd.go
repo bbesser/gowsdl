@@ -97,6 +97,9 @@ Loop:
 				if err := d.DecodeElement(x, &t); err != nil {
 					return err
 				}
+				if (isBasicType(stripns(x.Restriction.Base))) {
+					x.isBasicType = true
+				}
 				s.SimpleType = append(s.SimpleType, x)
 			default:
 				d.Skip()
@@ -205,6 +208,9 @@ type XSDSimpleType struct {
 	List        XSDList        `xml:"list"`
 	Union       XSDUnion       `xml:"union"`
 	Final       string         `xml:"final"`
+	// isBasicType if the SimpleType is a primitive (i.e. string) or points to a
+	// SimpleType that is a primitive.
+	isBasicType bool
 }
 
 // XSDList represents a element list

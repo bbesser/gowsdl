@@ -123,6 +123,11 @@ func (g *GoWSDL) Start() (map[string][]byte, error) {
 		return nil, err
 	}
 
+	err = g.resolvePointersToBasicTypes()
+	if err != nil {
+		return nil, err
+	}
+
 	// Process WSDL nodes
 	for _, schema := range g.wsdl.Types.Schemas {
 		newTraverser(schema, g.wsdl.Types.Schemas).traverse()
@@ -191,6 +196,14 @@ func (g *GoWSDL) unmarshal() error {
 			return err
 		}
 	}
+
+	return nil
+}
+
+func (g *GoWSDL) resolvePointersToBasicTypes() error {
+	//for _, schema := range g.wsdl.Types.Schemas {
+	//
+	//}
 
 	return nil
 }
@@ -472,7 +485,17 @@ Loop:
 		return value
 	}
 
-	return "*" + g.seenTargetNamespace[fullNamespace] + replaceReservedWords(makePublic(theType))
+	pointer := "*"
+	for _, schema := range g.wsdl.Types.Schemas {
+		for _, st := range schema.SimpleType {
+			if st.Name == theType && st.isBasicType {
+				pointer = ""
+				break
+			}
+		}
+	}
+
+	return pointer + g.seenTargetNamespace[fullNamespace] + replaceReservedWords(makePublic(theType))
 }
 
 func removePointerFromType(goType string) string {
