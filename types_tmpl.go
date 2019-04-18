@@ -126,9 +126,13 @@ var typesTmpl = `
 		{{else}}
 			{{ $nsName := $name | replaceReservedWords | makePublic }}
 			{{ $nsType := toGoType .Type | removePointerFromType }}
-			type {{$nsName}} struct {
+			type {{$nsName}}WithNamespace struct {
 				XMLName xml.Name ` + "`xml:\"web:{{$nsName}}\"`" + `
 				XmlNS   string   ` + "`xml:\"xmlns:web,attr\"`" + `
+				{{$nsType}} ` + "`xml:\"{{$nsName}}\"`" + `
+			}
+			type {{$nsName}} struct {
+				XMLName xml.Name ` + "`xml:\"{{$nsName}}\"`" + `
 				{{$nsType}} ` + "`xml:\"{{$nsName}}\"`" + `
 			}
 		{{end}}
